@@ -153,6 +153,13 @@ It should handle:
 - `build / test / smoke`
 - a final summary of what to run and what to open
 
+This prompt should also cover the common differences across users:
+- no GPT / Codex subscription, or no readable subscription snapshot
+- non-default `~/.openclaw`, `~/.codex`, Gateway URL, or UI port
+- a completely different active agent roster from the examples in this repo
+- a machine that can build locally but is not yet connected to a live Gateway
+- missing optional data sources where the control center should still come up safely in read-only mode
+
 Give OpenClaw this full prompt:
 
 ```text
@@ -166,6 +173,8 @@ Hard rules:
 3. Do not modify OpenClaw's own config files.
 4. Do not enable live import or approval mutations.
 5. Keep all high-risk write paths disabled.
+6. Do not assume default agent names, default paths, or a default subscription model. Use real inspection results from this machine.
+7. Do not treat missing subscription data, missing Codex data, or a missing billing snapshot as an install failure. If the UI can run safely, continue and clearly mark which panels will be degraded.
 
 Follow this order:
 
@@ -173,15 +182,23 @@ Phase 1: inspect the environment
 1. Check whether the OpenClaw Gateway is reachable and confirm the correct `GATEWAY_URL`.
 2. Confirm the correct `OPENCLAW_HOME` and `CODEX_HOME` on this machine.
 3. If the subscription or billing snapshot is stored outside the default path, find the correct `OPENCLAW_SUBSCRIPTION_SNAPSHOT_PATH`.
-4. If any required path, process, or file is missing, stop and tell me exactly what is missing instead of guessing.
+4. Confirm which prerequisites are truly present and which are missing-but-degradable. At minimum, evaluate:
+   - the OpenClaw Gateway
+   - `openclaw.json`
+   - OpenClaw session/runtime data
+   - `CODEX_HOME`
+   - the subscription/billing snapshot
+5. If a path, process, or file is missing in a way that makes the control center impossible to start at all, stop and tell me exactly what is missing instead of guessing.
+6. If the missing item only affects richer dashboards, such as subscription snapshots, Codex telemetry, or part of the runtime data, continue the install and mark those areas as "install can continue, but this surface will be partial".
+7. Do not assume any fixed agent names. If `openclaw.json` is readable, treat it as the source of truth. If not, fall back to runtime-visible agents and explicitly say that roster confidence is lower.
 
 Phase 2: install the project
-5. Confirm that the current directory is the control-center repo root.
-6. Install dependencies.
-7. If `.env` does not exist, create it from `.env.example`. If it already exists, update it while preserving safe first-run defaults.
+8. Confirm that the current directory is the control-center repo root.
+9. Install dependencies.
+10. If `.env` does not exist, create it from `.env.example`. If it already exists, update it while preserving safe first-run defaults.
 
 Phase 3: apply safe first-run settings
-8. Keep these values:
+11. Keep these values:
    - READONLY_MODE=true
    - LOCAL_TOKEN_AUTH_REQUIRED=true
    - APPROVAL_ACTIONS_ENABLED=false
@@ -189,33 +206,42 @@ Phase 3: apply safe first-run settings
    - IMPORT_MUTATION_ENABLED=false
    - IMPORT_MUTATION_DRY_RUN=false
    - UI_MODE=false
-9. Only change these when the machine actually requires it:
+12. Only change these when the machine actually requires it:
    - GATEWAY_URL
    - OPENCLAW_HOME
    - CODEX_HOME
    - OPENCLAW_SUBSCRIPTION_SNAPSHOT_PATH
    - UI_PORT
+13. If `CODEX_HOME` does not exist, or this machine simply does not have Codex / GPT subscription data, do not invent a path. Leave it unset and say clearly that Usage / Subscription will be partially visible or unavailable.
+14. If no subscription snapshot exists, do not fabricate `OPENCLAW_SUBSCRIPTION_SNAPSHOT_PATH`. Continue the install and say that quota/subscription cards will show disconnected or estimated states.
+15. If `4310` is already in use, choose a free local port, write it to `UI_PORT`, and report the new address clearly.
+16. Do not change application logic just because my agent roster differs from the examples in this repo. The control center should reflect the agents configured or visible on my own machine.
 
 Phase 4: verify the install
-10. Run:
+17. Run:
    - npm run build
    - npm test
    - npm run smoke:ui
-11. If any step fails, stop and tell me:
+18. If any step fails, stop and tell me:
    - which step failed
    - why it failed
    - what I should do next
+19. If build / test / smoke pass but the live Gateway is still unreachable, do not classify the install as failed. Classify it as "local UI ready, live observability not connected yet".
 
 Phase 5: hand off a ready-to-run result
-12. If verification passes, print:
+20. If verification passes, print:
    - which env values you changed
    - which env values stayed on the defaults
    - the exact command I should run next to launch the UI
    - the first 3 dashboard pages I should open
    - which missing signals are normal for a partially connected environment
+   - which capabilities are working now
+   - which capabilities are degraded because this machine lacks those data sources
+   - which env values or prerequisites I would need later if I want to connect subscription / Codex / live Gateway data
 
 Format your final answer as:
 - Environment check
+- Differences and degradation assessment
 - Actual changes
 - Verification result
 - Next command

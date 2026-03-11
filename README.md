@@ -139,6 +139,13 @@ cp .env.example .env
 - 跑 `build / test / smoke`
 - 告诉你最后该执行什么命令、该看哪些页面
 
+这段 prompt 应该覆盖这些常见差异：
+- 用户没有 GPT / Codex 订阅，或者没有可读的订阅快照
+- `~/.openclaw`、`~/.codex`、Gateway 地址、端口都不是默认值
+- 机器上的活跃 agent 名单和本仓库示例完全不同
+- 机器当前只能本地构建，暂时还接不上 live Gateway
+- 某些数据源缺失，但控制中心仍然应该先以“安全只读”方式跑起来
+
 把下面整段原样交给 OpenClaw：
 
 ```text
@@ -152,6 +159,8 @@ cp .env.example .env
 3. 不要修改 OpenClaw 自己的配置文件。
 4. 不要开启 live import，不要开启 approval mutation。
 5. 所有高风险写操作保持关闭。
+6. 不要假设这台机器使用默认 agent 名称、默认路径、默认订阅方式，必须以实际探测结果为准。
+7. 不要把“缺少订阅数据 / 缺少 Codex 数据 / 缺少账单快照”当成安装失败；只要 UI 能安全跑起来，就应当继续并明确哪些面板会降级。
 
 请按这个顺序执行：
 
@@ -159,15 +168,23 @@ cp .env.example .env
 1. 检查 OpenClaw Gateway 是否可达，并确认正确的 `GATEWAY_URL`。
 2. 确认这台机器上正确的 `OPENCLAW_HOME` 和 `CODEX_HOME`。
 3. 如果订阅或账单快照文件不在默认位置，找到正确的 `OPENCLAW_SUBSCRIPTION_SNAPSHOT_PATH`。
-4. 如果缺少必要路径、进程或文件，不要猜，直接停止并明确告诉我缺什么。
+4. 确认这台机器上有哪些前提是真正存在的，哪些是缺失但允许降级的。至少分别判断：
+   - OpenClaw Gateway
+   - `openclaw.json`
+   - OpenClaw 会话 / 运行时数据
+   - `CODEX_HOME`
+   - 订阅 / 账单快照
+5. 如果缺少会导致“完全无法启动控制中心”的必要路径、进程或文件，不要猜，直接停止并明确告诉我缺什么。
+6. 如果缺少的只是增强型数据源，例如订阅快照、Codex telemetry 或部分运行时文件，不要停止安装；继续并把这些项标记为“安装可继续，但相关页面会部分缺失”。
+7. 不要假设任何固定 agent 名称。若 `openclaw.json` 可读，就以它为准；若不可读，再回退到运行时可见 agent，并明确说明可信度下降。
 
 第二阶段：安装项目
-5. 确认当前目录是 control-center 仓库根目录。
-6. 运行依赖安装。
-7. 如果 `.env` 不存在，就从 `.env.example` 创建；如果存在，就在保留安全默认值的前提下修正它。
+8. 确认当前目录是 control-center 仓库根目录。
+9. 运行依赖安装。
+10. 如果 `.env` 不存在，就从 `.env.example` 创建；如果存在，就在保留安全默认值的前提下修正它。
 
 第三阶段：配置安全首次接入
-8. 保持这些值：
+11. 保持这些值：
    - READONLY_MODE=true
    - LOCAL_TOKEN_AUTH_REQUIRED=true
    - APPROVAL_ACTIONS_ENABLED=false
@@ -175,33 +192,42 @@ cp .env.example .env
    - IMPORT_MUTATION_ENABLED=false
    - IMPORT_MUTATION_DRY_RUN=false
    - UI_MODE=false
-9. 只有在本机环境确实不同的时候，才修改：
+12. 只有在本机环境确实不同的时候，才修改：
    - GATEWAY_URL
    - OPENCLAW_HOME
    - CODEX_HOME
    - OPENCLAW_SUBSCRIPTION_SNAPSHOT_PATH
    - UI_PORT
+13. 如果 `CODEX_HOME` 不存在，或者这台机器根本没有 Codex / GPT 订阅数据，不要强行填假路径；保留为空，并在结果里明确说明“Usage / Subscription 将部分可见或不可见”。
+14. 如果订阅快照不存在，不要伪造 `OPENCLAW_SUBSCRIPTION_SNAPSHOT_PATH`；继续安装，并明确说明订阅额度相关卡片会显示未连接或估算状态。
+15. 如果 `4310` 被占用，选择一个空闲本地端口并写入 `UI_PORT`，然后把新地址明确告诉我。
+16. 不要因为我的 agent roster 和示例仓库不同就改应用逻辑；控制中心应该根据我机器自己的 OpenClaw 配置和运行时数据来显示 agent。
 
 第四阶段：验证安装
-10. 运行：
+17. 运行：
    - npm run build
    - npm test
    - npm run smoke:ui
-11. 如果有任何一步失败，停止并告诉我：
+18. 如果有任何一步失败，停止并告诉我：
    - 哪一步失败了
    - 原因是什么
    - 我下一步该怎么修
+19. 如果 build / test / smoke 通过，但 live Gateway 仍不可达，也不要把这次接入判定为失败；要把结果归类为“本地 UI 已可用，但 live 观测尚未接通”。
 
 第五阶段：交付可启动结果
-12. 如果验证通过，输出：
+20. 如果验证通过，输出：
    - 你实际修改了哪些 env 值
    - 最终 `.env` 中哪些值沿用了默认值
    - 我下一步启动 UI 的准确命令
    - 我应该先打开的 3 个页面
    - 哪些信号如果为空，属于“正常但未接线完全”
+   - 哪些能力现在已经可用
+   - 哪些能力因为当前机器没有相关数据源而处于降级状态
+   - 如果我以后补上订阅 / Codex / Gateway，只需要补哪几个 env 或前置条件
 
 最后请用这个格式给我结果：
 - 环境检查
+- 差异与降级判断
 - 实际修改
 - 验证结果
 - 下一步命令

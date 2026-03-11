@@ -1,5 +1,23 @@
 # Progress
 
+## Phase 141 (README install prompt now handles heterogeneous OpenClaw environments) — Completed
+- Scope:
+  - Make the OpenClaw setup mega prompt robust for users whose machine, subscription state, agent roster, or data sources differ from the maintainer's environment.
+  - Explicitly distinguish hard blockers from acceptable degraded states.
+- Changed files:
+  - `README.md`
+  - `README.en.md`
+  - `docs/PROGRESS.md`
+- Implementation:
+  - Expanded the Chinese and English installation prompts so they no longer assume default agent names, default paths, Codex presence, or subscription snapshots.
+  - Added explicit guidance for no-subscription / no-Codex / no-billing-snapshot users and for machines that can run locally before live Gateway observability is connected.
+  - Required the installing OpenClaw to classify missing pieces as either startup blockers or degradations and to report which surfaces will remain partial.
+- Verification:
+  - `npm run build`
+  - `npm test`
+  - `npm run smoke:ui`
+  - `npm run release:audit`
+
 ## Phase 140 (README onboarding now defaults to OpenClaw-driven setup) — Completed
 - Scope:
   - Make the README recommend OpenClaw-assisted install as the primary onboarding path instead of an optional extra.
