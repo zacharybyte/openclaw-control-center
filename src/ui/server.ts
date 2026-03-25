@@ -497,6 +497,7 @@ interface TeamMemberSnapshot {
   model: string;
   workspace: string;
   toolsProfile: string;
+  default?: boolean;
 }
 
 interface TeamSnapshot {
@@ -10720,11 +10721,16 @@ async function resolveStaffRoleLabel(member: TeamMemberSnapshot, language: UiLan
       .find((value) => value && value.trim().length > 0) ?? "";
   const key = normalizeLookupKey(member.agentId);
 
+  const explicit = `${explicitRole} ${explicitMission}`.trim();
+  if (explicit) {
+    return explicit;
+  }
+
   if (
     key === "monkey" &&
     (normalized.includes("youtube-to-article") ||
       combined.includes("把 YouTube 视频转成增值长文章") ||
-      combined.includes("YouTube 视频转成增值长文章"))
+      combined.includes("YouTube 视频转长文"))
   ) {
     return pickUiText(language, "YouTube to article writing", "YouTube 视频转长文");
   }
@@ -10790,22 +10796,8 @@ async function resolveStaffRoleLabel(member: TeamMemberSnapshot, language: UiLan
     return pickUiText(language, "Main control and coordination", "主控与协调");
   }
 
-  if (key === "codex" || normalized.includes("codex")) {
+  if (key === "codex") {
     return pickUiText(language, "Coding automation", "自动化编码执行");
-  }
-
-  const explicit = `${explicitRole} ${explicitMission}`.trim();
-  if (
-    explicit &&
-    (normalizeEvidenceText(explicit).includes("youtube") || normalizeEvidenceText(explicit).includes("article"))
-  ) {
-    return pickUiText(language, "YouTube to article writing", "YouTube 视频转长文");
-  }
-  if (explicit && (normalizeEvidenceText(explicit).includes("control-center") || explicit.includes("控制中心"))) {
-    return pickUiText(language, "Control Center delivery", "控制中心开发与交付");
-  }
-  if (explicit && (normalizeEvidenceText(explicit).includes("creator") || explicit.includes("创作"))) {
-    return pickUiText(language, "High-value content creation", "高价值内容创作");
   }
 
   return pickUiText(language, "Role not defined in workspace", "工作区未写明职责");
@@ -11093,17 +11085,17 @@ async function loadEditableAgentScopesFromConfig(): Promise<{
   status: EditableAgentScopeConfigStatus;
   scopes: EditableAgentScope[];
 }> {
-  const raw = await safeReadTextFile(OPENCLAW_CONFIG_PATH);
-  if (!raw?.trim()) return { status: "config_missing", scopes: [] };
-  try {
-    const scopes = resolveEditableAgentScopesFromConfig(JSON.parse(raw) as unknown);
-    return {
-      status: scopes.length > 0 ? "configured" : "config_invalid",
-      scopes: scopes.length > 0 ? scopes : [buildMainEditableAgentScope()],
-    };
-  } catch {
-    return { status: "config_invalid", scopes: [buildMainEditableAgentScope()] };
-  }
+   const raw = await safeReadTextFile(OPENCLAW_CONFIG_PATH);
+   if (!raw?.trim()) return { status: "config_missing", scopes: [] };
+   try {
+     const scopes = resolveEditableAgentScopesFromConfig(JSON.parse(stripJsoncComments(raw)) as unknown);
+     return {
+       status: scopes.length > 0 ? "configured" : "config_invalid",
+       scopes: scopes.length > 0 ? scopes : [buildMainEditableAgentScope()],
+     };
+   } catch {
+     return { status: "config_invalid", scopes: [buildMainEditableAgentScope()] };
+   }
 }
 
 async function loadEditableAgentScopesFromWorkspaceDirs(): Promise<EditableAgentScope[]> {
@@ -11203,8 +11195,8 @@ function resolveEditableAgentScopesFromConfigText(raw: string | undefined): {
   scopes: EditableAgentScope[];
 } {
   if (!raw?.trim()) return { status: "config_missing", scopes: [] };
-  try {
-    const scopes = resolveEditableAgentScopesFromConfig(JSON.parse(raw) as unknown);
+   try {
+     const scopes = resolveEditableAgentScopesFromConfig(JSON.parse(stripJsoncComments(raw)) as unknown);
     return {
       status: scopes.length > 0 ? "configured" : "config_invalid",
       scopes: scopes.length > 0 ? scopes : [buildMainEditableAgentScope()],
@@ -11533,7 +11525,7 @@ async function loadTeamSnapshot(officeRoster: AgentRosterSnapshot): Promise<Team
     };
   }
   try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const parsed = JSON.parse(stripJsoncComments(raw)) as Record<string, unknown>;
     const agentsRoot = parsed.agents as Record<string, unknown> | undefined;
     const defaults = (agentsRoot?.defaults ?? {}) as Record<string, unknown>;
     const defaultModel =
@@ -11546,6 +11538,7 @@ async function loadTeamSnapshot(officeRoster: AgentRosterSnapshot): Promise<Team
       const id = typeof obj.id === "string" ? obj.id.trim() : "";
       if (!id) continue;
       const tools = (obj.tools ?? {}) as Record<string, unknown>;
+      const isDefault = typeof obj.default === "boolean" ? obj.default : false;
       members.push({
         agentId: id,
         displayName:
@@ -11557,11 +11550,16 @@ async function loadTeamSnapshot(officeRoster: AgentRosterSnapshot): Promise<Team
           (typeof obj.workspace === "string" && obj.workspace.trim()) || "未标注",
         toolsProfile:
           (typeof tools.profile === "string" && tools.profile.trim()) || "default",
+        default: isDefault,
       });
     }
     return {
       missionStatement,
-      members: members.sort((a, b) => a.agentId.localeCompare(b.agentId, "zh-Hans-CN")),
+      members: members.sort((a, b) => {
+        if (a.default && !b.default) return -1;
+        if (!a.default && b.default) return 1;
+        return a.agentId.localeCompare(b.agentId, "zh-Hans-CN");
+      }),
       sourcePath,
       detail: `已从 openclaw.json 读取 ${members.length} 名员工。`,
     };
@@ -18010,6 +18008,39 @@ function defaultSnapshot(): ReadModelSnapshot {
     budgetSummary: { total: 0, ok: 0, warn: 0, over: 0, evaluations: [] },
     generatedAt: now,
   };
+}
+
+function stripJsoncComments(input: string): string {
+  let result = "";
+  let i = 0;
+  let inString = false;
+  while (i < input.length) {
+    const ch = input[i];
+    if (inString) {
+      result += ch;
+      if (ch === "\\" && i + 1 < input.length) {
+        i++;
+        result += input[i];
+      } else if (ch === '"') {
+        inString = false;
+      }
+      i++;
+    } else if (ch === '"') {
+      inString = true;
+      result += ch;
+      i++;
+    } else if (ch === "/" && input[i + 1] === "/") {
+      while (i < input.length && input[i] !== "\n") i++;
+    } else if (ch === "/" && input[i + 1] === "*") {
+      i += 2;
+      while (i < input.length && !(input[i] === "*" && input[i + 1] === "/")) i++;
+      i += 2;
+    } else {
+      result += ch;
+      i++;
+    }
+  }
+  return result;
 }
 
 class RequestValidationError extends Error {
