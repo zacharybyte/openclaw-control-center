@@ -35,7 +35,10 @@
       "Bash(python3:*)",
       "Bash(node:*)",
       "Bash(npm install:*)",
-      "Bash(sudo npm:*)"
+      "Bash(sudo npm:*)",
+      "Bash(ls ~/.openclaw/runtime/gateway-status*.json)",
+      "Bash(~/.openclaw/bin/openclaw gateway:*)",
+      "Bash(launchctl list:*)"
     ]
   }
 }
