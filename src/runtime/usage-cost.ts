@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { stripJsoncComments } from "./strip-jsonc";
 import type { AgentRunState, ReadModelSnapshot } from "../types";
 
 const RUNTIME_DIR = join(process.cwd(), "runtime");
@@ -654,7 +655,7 @@ async function loadModelContextCatalog(): Promise<ModelContextCatalogEntry[]> {
 async function loadOpenclawCronJobNameMap(): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   try {
-    const raw = JSON.parse(await readFile(OPENCLAW_CRON_JOBS_PATH, "utf8")) as unknown;
+    const raw = JSON.parse(stripJsoncComments(await readFile(OPENCLAW_CRON_JOBS_PATH, "utf8"))) as unknown;
     const root = asObject(raw);
     const jobs = root && Array.isArray(root.jobs) ? root.jobs : [];
     for (const job of jobs) {

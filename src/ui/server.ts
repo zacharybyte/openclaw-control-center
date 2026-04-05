@@ -66,6 +66,7 @@ import {
 import { buildPixelState } from "../runtime/pixel-state";
 import { buildUsageCostSnapshot, type UsageCostMode, type UsageCostSnapshot } from "../runtime/usage-cost";
 import { type StructuredChatDocEntry } from "../runtime/doc-hub";
+import { stripJsoncComments } from "../runtime/strip-jsonc";
 import {
   PROJECT_STATES,
   PROJECTS_PATH,
@@ -274,7 +275,7 @@ function safeReadTextFileSync(path: string): string | undefined {
 function inferWorkspaceRootFromConfigText(raw: string | undefined, configDir: string): string | undefined {
   if (!raw?.trim()) return undefined;
   try {
-    return inferWorkspaceRootFromConfigObject(JSON.parse(raw) as unknown, configDir);
+    return inferWorkspaceRootFromConfigObject(JSON.parse(stripJsoncComments(raw)) as unknown, configDir);
   } catch {
     return undefined;
   }
@@ -538,6 +539,7 @@ interface EditableAgentScope {
   facetKey: string;
   facetLabel: string;
   workspaceRoot: string;
+  isDefault?: boolean;
 }
 
 type EditableAgentScopeConfigStatus = "configured" | "config_missing" | "config_invalid";
@@ -1929,7 +1931,7 @@ export function startUiServer(port: number, toolClient: ToolClient): Server {
     }
   });
 
-  const bindAddress = process.env.UI_BIND_ADDRESS ?? "127.0.0.1";
+  const bindAddress = process.env.UI_BIND_ADDRESS ?? "0.0.0.0";
   server.listen(port, bindAddress, () => {
     const displayUrl = bindAddress === "0.0.0.0" ? `http://<your-ip>:${port}` : `http://${bindAddress}:${port}`;
     console.log(`[mission-control] ui listening at ${displayUrl}`);
@@ -2428,7 +2430,7 @@ function sessionStateLabel(state: AgentRunState): string {
 async function loadOpenclawCronCatalog(language: UiLanguage): Promise<OpenclawCronJobSummary[]> {
   for (const candidate of [...new Set(OPENCLAW_CRON_JOBS_CANDIDATES)]) {
     try {
-      const raw = JSON.parse(await readFile(candidate, "utf8")) as unknown;
+      const raw = JSON.parse(stripJsoncComments(await readFile(candidate, "utf8"))) as unknown;
       const root = asObject(raw);
       const jobsRaw = root && Array.isArray(root.jobs) ? root.jobs : [];
       const jobs: OpenclawCronJobSummary[] = [];
@@ -10969,9 +10971,12 @@ async function listEditableMemoryFiles(): Promise<EditableFileEntry[]> {
     }
   }
 
+  const defaultMemFacetKey = agentScopes[0]?.facetKey ?? "main";
   return output.sort(
     (a, b) =>
-      (a.facetKey === "main" ? -1 : b.facetKey === "main" ? 1 : (a.facetLabel ?? "").localeCompare(b.facetLabel ?? "", "zh-Hans-CN")) ||
+      (a.facetKey === defaultMemFacetKey ? -1 : b.facetKey === defaultMemFacetKey ? 1 :
+       a.facetKey === "main" ? -1 : b.facetKey === "main" ? 1 :
+       (a.facetLabel ?? "").localeCompare(b.facetLabel ?? "", "zh-Hans-CN")) ||
       b.updatedAt.localeCompare(a.updatedAt) ||
       a.relativePath.localeCompare(b.relativePath, "zh-Hans-CN"),
   );
@@ -11029,13 +11034,16 @@ async function listEditableWorkspaceFiles(): Promise<EditableFileEntry[]> {
     }
   }
 
+  const defaultFacetKey = agentScopes[0]?.facetKey ?? "main";
   return output.sort((a, b) => {
-    const facetA = a.facetLabel ?? "";
-    const facetB = b.facetLabel ?? "";
-    if (facetA !== facetB) {
-      if (facetA === "Main") return -1;
-      if (facetB === "Main") return 1;
-      return facetA.localeCompare(facetB, "zh-Hans-CN");
+    const fkA = a.facetKey ?? "";
+    const fkB = b.facetKey ?? "";
+    if (fkA !== fkB) {
+      if (fkA === defaultFacetKey) return -1;
+      if (fkB === defaultFacetKey) return 1;
+      if (fkA === "main") return -1;
+      if (fkB === "main") return 1;
+      return (a.facetLabel ?? "").localeCompare(b.facetLabel ?? "", "zh-Hans-CN");
     }
     const priority = documentFilePriority(a.relativePath) - documentFilePriority(b.relativePath);
     if (priority !== 0) return priority;
@@ -11073,7 +11081,9 @@ async function listEditableFiles(scope: EditableFileScope): Promise<EditableFile
 async function loadEditableAgentScopes(): Promise<EditableAgentScope[]> {
   const configured = await loadEditableAgentScopesFromConfig();
   if (configured.status === "configured" && configured.scopes.length > 0) {
-    return configured.scopes;
+    const scopes = configured.scopes;
+    const nonMain = scopes.filter((s) => s.facetKey !== "main");
+    return nonMain.length > 0 ? nonMain : scopes;
   }
   if (configured.status === "config_invalid") {
     return [buildMainEditableAgentScope()];
@@ -11146,10 +11156,11 @@ function resolveEditableAgentScopesFromConfig(input: unknown): EditableAgentScop
       facetKey,
       facetLabel: facetKey === "main" ? "Main" : humanizeOperatorLabel(rawId),
       workspaceRoot,
+      isDefault: row.default === true,
     });
   }
 
-  return ensureMainEditableAgentScope(output).sort(compareEditableAgentScopes);
+  return output.sort(compareEditableAgentScopes);
 }
 
 export function resolveEditableAgentScopesFromConfigForSmoke(input: unknown): EditableAgentScope[] {
@@ -11173,6 +11184,8 @@ export function resolveEditableAgentScopesWithFallbackForSmoke(input: {
 function compareEditableAgentScopes(a: EditableAgentScope, b: EditableAgentScope): number {
   if (a.facetKey === "main") return -1;
   if (b.facetKey === "main") return 1;
+  if (a.isDefault && !b.isDefault) return -1;
+  if (!a.isDefault && b.isDefault) return 1;
   return a.facetLabel.localeCompare(b.facetLabel, "zh-Hans-CN");
 }
 
@@ -11383,12 +11396,16 @@ async function renderEditableFileWorkbench(input: {
   const normalizeFacetKey = (value: string | undefined): string =>
     (value ?? "all").trim().toLowerCase();
 
+  const inputFacetKeys = new Set((input.facetOptions ?? []).map((o) => normalizeFacetKey(o.key)));
+  const hasNonMainInput = [...inputFacetKeys].some((k) => k !== "main");
   const discoveredFacetOptions = input.entries
     .filter((entry) => entry.facetKey && entry.facetLabel)
     .reduce<Array<{ key: string; label: string }>>((acc, entry) => {
       if (!entry.facetKey || !entry.facetLabel) return acc;
       const key = normalizeFacetKey(entry.facetKey);
       if (!key) return acc;
+      // Suppress main from discovered facets when non-main options are explicitly provided
+      if (key === "main" && hasNonMainInput) return acc;
       if (acc.some((item) => item.key === key)) return acc;
       acc.push({ key, label: entry.facetLabel });
       return acc;
@@ -11403,6 +11420,10 @@ async function renderEditableFileWorkbench(input: {
       return acc;
     }, [])
     .sort((a, b) => {
+      // Preserve explicit input order first, then sort discovered-only items
+      const idxA = inputFacetKeys.has(a.key) ? [...inputFacetKeys].indexOf(a.key) : Infinity;
+      const idxB = inputFacetKeys.has(b.key) ? [...inputFacetKeys].indexOf(b.key) : Infinity;
+      if (idxA !== idxB) return idxA - idxB;
       if (a.key === "main") return -1;
       if (b.key === "main") return 1;
       if (a.key === "shared") return -1;
@@ -11817,7 +11838,7 @@ export function buildOfficeSpaceCards(
   const cards = [...agentIds].map((agentId) => {
     const sessions = snapshot.sessions.filter((session) => session.agentId === agentId);
     const runtimeActiveSessions = Math.max(0, runtimeActiveSessionsByAgent.get(agentId) ?? 0);
-    const snapshotActiveSessions = sessions.filter((session) => session.state !== "idle").length;
+    const snapshotActiveSessions = sessions.filter((session) => resolveEffectiveSessionState(session) !== "idle").length;
     const activeSessions = Math.max(snapshotActiveSessions, runtimeActiveSessions);
     const ownedActiveTasks = tasks.filter(
       (task) => task.owner.toLowerCase() === agentId.toLowerCase() && task.status !== "done",
@@ -11836,7 +11857,7 @@ export function buildOfficeSpaceCards(
       ...ownedActiveTasks.map((task) => task.title),
     ].filter((value, idx, arr) => arr.indexOf(value) === idx);
     const status = resolveOfficeCardStatus(
-      sessions.map((item) => item.state),
+      sessions.map((item) => resolveEffectiveSessionState(item)),
       activeSessions,
       focusItems.length,
     );
@@ -11997,6 +12018,16 @@ function buildTaskRoleSummaries(tasks: TaskListItem[]): TaskRoleSummary[] {
   });
 }
 
+const STALE_SESSION_ERROR_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+function resolveEffectiveSessionState(session: { state: AgentRunState; lastMessageAt?: string }): AgentRunState {
+  if (session.state === "error") return "idle";
+  if (session.state !== "blocked") return session.state;
+  if (!session.lastMessageAt) return session.state;
+  const age = Date.now() - new Date(session.lastMessageAt).getTime();
+  return age > STALE_SESSION_ERROR_THRESHOLD_MS ? "idle" : session.state;
+}
+
 function resolveOfficeCardStatus(
   states: AgentRunState[],
   activeSessionCount: number,
@@ -12120,7 +12151,7 @@ function staffCurrentWorkLabel(input: {
   if (office?.status === "waiting_approval") {
     return { label: currentLabel, value: pickUiText(language, "Waiting for approval", "等待审批") };
   }
-  if (office?.status === "blocked" || office?.status === "error") {
+  if (office?.status === "blocked") {
     return { label: currentLabel, value: pickUiText(language, "Blocked and waiting for support", "阻塞中，等待支援") };
   }
   const cronName = execution?.cronJobNames.find((name) => name.trim())?.trim();
@@ -18010,38 +18041,6 @@ function defaultSnapshot(): ReadModelSnapshot {
   };
 }
 
-function stripJsoncComments(input: string): string {
-  let result = "";
-  let i = 0;
-  let inString = false;
-  while (i < input.length) {
-    const ch = input[i];
-    if (inString) {
-      result += ch;
-      if (ch === "\\" && i + 1 < input.length) {
-        i++;
-        result += input[i];
-      } else if (ch === '"') {
-        inString = false;
-      }
-      i++;
-    } else if (ch === '"') {
-      inString = true;
-      result += ch;
-      i++;
-    } else if (ch === "/" && input[i + 1] === "/") {
-      while (i < input.length && input[i] !== "\n") i++;
-    } else if (ch === "/" && input[i + 1] === "*") {
-      i += 2;
-      while (i < input.length && !(input[i] === "*" && input[i + 1] === "/")) i++;
-      i += 2;
-    } else {
-      result += ch;
-      i++;
-    }
-  }
-  return result;
-}
 
 class RequestValidationError extends Error {
   readonly issues?: string[];

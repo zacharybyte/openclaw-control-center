@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { stripJsoncComments } from "./strip-jsonc";
 import type { CommanderExceptionsFeed, ExceptionFeedItem } from "../types";
 
 const POLICY_PATH = join(process.cwd(), "runtime", "notification-policy.json");
@@ -56,7 +57,7 @@ export interface NotificationPreview {
 export async function loadNotificationPolicy(): Promise<NotificationPolicyLoadResult> {
   try {
     const raw = await readFile(POLICY_PATH, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed = JSON.parse(stripJsoncComments(raw)) as unknown;
     return normalizePolicy(parsed);
   } catch {
     return {

@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/universe/.claude/channels/telegram/**)",
+      "Bash(grep -r \"MIMO\\\\|Mimo\\\\|mimo\" /Users/universe/Work/develop/workspace/openclaw-control-center --include=*.ts --include=*.js --include=*.json)",
+      "Bash(openclaw --version)",
+      "Bash(curl -s http://127.0.0.1:18789/sessions)",
+      "Bash(curl -s http://127.0.0.1:18789/api/sessions)",
+      "Bash(curl -s http://127.0.0.1:18789/api/v1/sessions)",
+      "Bash(curl -s \"http://127.0.0.1:18789/api/search/sessions?q=&limit=50\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -sv http://127.0.0.1:18789/sessions)",
+      "Bash(curl -s \"http://127.0.0.1:18789/api/sessions/list\")",
+      "Bash(curl -s \"http://127.0.0.1:18789/sessions/list\")",
+      "Bash(curl -s \"http://127.0.0.1:18789/api/snapshot\")",
+      "Bash(python3 -c ':*)",
+      "Bash(curl -s \"http://127.0.0.1:18789/api/sessions\")",
+      "Bash(curl -s \"http://127.0.0.1:4310/api/sessions\")",
+      "Bash(ps:*)",
+      "Bash(kill 52101)",
+      "Bash(curl -s http://127.0.0.1:18789/api/health)",
+      "Bash(curl -s http://127.0.0.1:18789/health)",
+      "Bash(curl -s http://127.0.0.1:4310/api/graph)",
+      "Bash(curl -s http://127.0.0.1:4310/graph)",
+      "Bash(curl -s \"http://127.0.0.1:4310/api/graph\" -H \"Accept: application/json\")",
+      "Bash(openclaw gateway:*)",
+      "Bash(openclaw status:*)",
+      "Bash(curl -s \"http://127.0.0.1:4310/settings\" -H \"Accept: application/json\")",
+      "Bash(head -3 ls /Users/universe/Work/develop/workspace/openclaw-control-center/.env*)",
+      "Bash(curl -sv \"http://127.0.0.1:4310/settings\")",
+      "Bash(curl -s \"http://127.0.0.1:4310/\")",
+      "Bash(curl -s \"http://127.0.0.1:4310/tools\")",
+      "Bash(curl -sv \"http://127.0.0.1:4310/tools\")",
+      "Bash(env -i PATH=\"/Users/universe/Work/develop/workspace/openclaw-control-center/node_modules/.bin:/opt/homebrew/bin:/usr/bin:/bin\" which openclaw)",
+      "Bash(python3:*)",
+      "Bash(node:*)",
+      "Bash(npm install:*)",
+      "Bash(sudo npm:*)"
+    ]
+  }
+}

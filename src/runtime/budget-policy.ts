@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { stripJsoncComments } from "./strip-jsonc";
 import type { BudgetPolicyConfig, BudgetThresholds } from "../types";
 
 const RUNTIME_DIR = join(process.cwd(), "runtime");
@@ -25,7 +26,7 @@ export interface BudgetPolicyLoadResult {
 export async function loadBudgetPolicy(): Promise<BudgetPolicyLoadResult> {
   try {
     const raw = await readFile(BUDGET_POLICY_PATH, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed = JSON.parse(stripJsoncComments(raw)) as unknown;
     const issues: string[] = [];
     const policy = normalizePolicy(parsed, issues);
 
